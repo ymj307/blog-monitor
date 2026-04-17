@@ -1,0 +1,32 @@
+name: Blog Monitor
+
+on:
+  schedule:
+    # 3시간마다 실행 (UTC 기준 → 한국시간 KST = UTC+9)
+    # 0, 3, 6, 9, 12, 15, 18, 21시 (UTC) = 9, 12, 15, 18, 21, 24, 3, 6시 (KST)
+    - cron: "0 0,3,6,9,12,15,18,21 * * *"
+
+  # 수동으로도 실행 가능하게 (테스트용)
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v3
+
+      - name: Node.js 설정
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+
+      - name: 패키지 설치
+        run: npm install
+
+      - name: 블로그 모니터링 실행
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
+        run: node monitor.js
