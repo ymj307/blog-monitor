@@ -1,4 +1,3 @@
-const axios = require("axios");
 const nodemailer = require("nodemailer");
 const cheerio = require("cheerio");
 
@@ -8,10 +7,33 @@ const cheerio = require("cheerio");
 const CONFIG = {
   blogUrl: "https://daoukiwoom.ai",
   alertEmail: "dymj307@daou.co.kr",
-  smtpUser: process.env.GMAIL_USER,   // GitHub Secret: GMAIL_USER
-  smtpPass: process.env.GMAIL_PASS,   // GitHub Secret: GMAIL_PASS
+  smtpUser: process.env.GMAIL_USER,
+  smtpPass: process.env.GMAIL_PASS,
   requestTimeout: 15000,
 };
+
+// ============================
+// fetch 헬퍼 (타임아웃 포함)
+// ============================
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CONFIG.requestTimeout);
+  try {
+    const res = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; BlogMonitor/1.0)",
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+        ...options.headers,
+      },
+    });
+    return res;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // ============================
 // 이메일 발송
@@ -45,14 +67,9 @@ async function collectPages() {
   console.log(`\n🔍 사이트맵 조회 중: ${sitemapUrl}`);
 
   try {
-    const res = await axios.get(sitemapUrl, {
-      timeout: CONFIG.requestTimeout,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; BlogMonitor/1.0)",
-      },
-    });
-
-    const $ = cheerio.load(res.data, { xmlMode: true });
+    const res = await fetchWithTimeout(sitemapUrl);
+    const text = await res.text();
+    const $ = cheerio.load(text, { xmlMode: true });
     const urls = [];
 
     $("url > loc").each((_, el) => {
@@ -78,18 +95,9 @@ async function collectPages() {
 // ============================
 async function visitPage(url) {
   try {
-    const res = await axios.get(url, {
-      timeout: CONFIG.requestTimeout,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; BlogMonitor/1.0)",
-        "Cache-Control": "no-cache",
-        Pragma: "no-cache",
-      },
-    });
+    const res = await fetchWithTimeout(url);
+    const html = (await res.text()).toLowerCase();
 
-    const html = (res.data || "").toLowerCase();
-
-    // Super/Notion 특유의 오류 문구 감지
     const errorKeywords = [
       "not published",
       "isn't published",
@@ -117,7 +125,7 @@ async function visitPage(url) {
     return {
       url,
       ok: false,
-      status: err.response?.status || 0,
+      status: 0,
       reason: err.message,
     };
   }
@@ -148,7 +156,6 @@ async function run() {
       errors.push(result);
     }
 
-    // 요청 간격 (서버 부하 방지)
     await new Promise((r) => setTimeout(r, 800));
   }
 
