@@ -5,9 +5,10 @@ const http = require("http");
 // ============================
 // 설정값
 // ============================
+// ⚠️ alertEmail의 "" 안에 오류 알람을 받을 이메일 계정을 입력하세요.
 const CONFIG = {
   blogUrl: "https://daoukiwoom.ai",
-  alertEmail: "dymj307@gmail.com",
+  alertEmail: "",
   smtpUser: process.env.GMAIL_USER,
   smtpPass: process.env.GMAIL_PASS,
   requestTimeout: 15000,
