@@ -8,7 +8,7 @@ const http = require("http");
 // ⚠️ alertEmail의 "" 안에 오류 알람을 받을 이메일 계정을 입력하세요.
 const CONFIG = {
   blogUrl: "https://daoukiwoom.ai",
-  alertEmail: "",
+  alertEmail: "발송받을_이메일계정_입력",
   smtpUser: process.env.GMAIL_USER,
   smtpPass: process.env.GMAIL_PASS,
   requestTimeout: 15000,
