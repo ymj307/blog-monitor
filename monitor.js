@@ -68,7 +68,7 @@ async function collectPages() {
     }
 
     const matches = res.body.match(/<loc>(.*?)<\/loc>/g) || [];
-    const urls = matches.map((m) => m.replace(/<\/?loc>/g, "").trim());
+    let urls = matches.map((m) => m.replace(/<\/?loc>/g, "").trim());
 
     if (urls.length === 0) {
       console.log("⚠️  sitemap에서 URL을 찾지 못했습니다. 메인 페이지만 체크합니다.");
@@ -81,8 +81,6 @@ async function collectPages() {
 
     console.log(`✅ 총 ${urls.length}개 페이지 발견 (${ignored}개 무시)`);
 
-    // ⚠️ 테스트용 - 확인 후 아래 줄 삭제하세요
-    urls.push("https://daoukiwoom.ai/this-page-does-not-exist-test-404");
 
     return urls;
   } catch (err) {
@@ -158,7 +156,7 @@ async function sendAlert(subject, body) {
     console.log("   GitHub Secrets에 GMAIL_USER와 GMAIL_PASS를 등록해주세요.");
     return;
   }
-  
+
   const transporter = nodemailer.createTransport({
     host: "smtp.gmail.com",
     port: 587,
