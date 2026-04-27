@@ -1,37 +1,139 @@
 const nodemailer = require("nodemailer");
-const cheerio = require("cheerio");
+const https = require("https");
+const http = require("http");
 
 // ============================
 // 설정값
 // ============================
 const CONFIG = {
   blogUrl: "https://daoukiwoom.ai",
-  alertEmail: "dymj307@daou.co.kr",
+  alertEmail: "dymj307@gmail.com",
   smtpUser: process.env.GMAIL_USER,
   smtpPass: process.env.GMAIL_PASS,
   requestTimeout: 15000,
 };
 
 // ============================
-// fetch 헬퍼 (타임아웃 포함)
+// HTTP 요청 헬퍼 (리다이렉트 따라가지 않음)
 // ============================
-async function fetchWithTimeout(url, options = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), CONFIG.requestTimeout);
-  try {
-    const res = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; BlogMonitor/1.0)",
-        "Cache-Control": "no-cache",
-        Pragma: "no-cache",
-        ...options.headers,
+function httpGet(url) {
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith("https") ? https : http;
+    const req = client.get(
+      url,
+      {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; BlogMonitor/1.0)",
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+        },
       },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () =>
+          resolve({ status: res.statusCode, body: data, headers: res.headers })
+        );
+      }
+    );
+
+    req.setTimeout(CONFIG.requestTimeout, () => {
+      req.destroy();
+      reject(new Error("Request timeout"));
     });
-    return res;
-  } finally {
-    clearTimeout(timer);
+
+    req.on("error", reject);
+  });
+}
+
+// ============================
+// sitemap.xml에서 URL 수집
+// ============================
+async function collectPages() {
+  const sitemapUrl = `${CONFIG.blogUrl}/sitemap.xml`;
+  console.log(`\n🔍 사이트맵 조회 중: ${sitemapUrl}`);
+
+  try {
+    // sitemap은 리다이렉트 따라가도 됨
+    let res = await httpGet(sitemapUrl);
+    if ((res.status === 301 || res.status === 302) && res.headers.location) {
+      res = await httpGet(res.headers.location);
+    }
+
+    const matches = res.body.match(/<loc>(.*?)<\/loc>/g) || [];
+    const urls = matches.map((m) => m.replace(/<\/?loc>/g, "").trim());
+
+    if (urls.length === 0) {
+      console.log("⚠️  sitemap에서 URL을 찾지 못했습니다. 메인 페이지만 체크합니다.");
+      return [CONFIG.blogUrl];
+    }
+
+    console.log(`✅ 총 ${urls.length}개 페이지 발견`);
+
+    // ⚠️ 테스트용 - 확인 후 아래 줄 삭제하세요
+    urls.push("https://daoukiwoom.ai/this-page-does-not-exist-test-404");
+
+    return urls;
+  } catch (err) {
+    console.log(`⚠️  sitemap 조회 실패: ${err.message}`);
+    console.log("메인 페이지만 체크합니다.");
+    return [CONFIG.blogUrl];
+  }
+}
+
+// ============================
+// 개별 페이지 방문 및 오류 감지
+// ============================
+async function visitPage(url) {
+  try {
+    const { status, body } = await httpGet(url);
+    const html = body.toLowerCase();
+
+    // 301/302 리다이렉트 감지
+    if (status === 301 || status === 302) {
+      return {
+        url,
+        ok: false,
+        status,
+        reason: `리다이렉트 감지 (HTTP ${status})`,
+      };
+    }
+
+    // 404, 5xx 등 HTTP 오류 감지
+    if (status === 404 || status >= 500) {
+      return {
+        url,
+        ok: false,
+        status,
+        reason: `HTTP ${status} 오류`,
+      };
+    }
+
+    // Super/Notion 특유의 오류 문구 감지 (캡처 기준)
+    const errorKeywords = [
+      "this page doesn't seem to exist",   // Super 오류 화면 1
+      "this page doesn't exist",            // Super 404 화면
+      "error 404: page not found",          // Super 404 태그
+      "the page still isn't fixed",         // Super 오류 안내
+      "not published",                       // Notion 미발행
+      "isn't published",
+      "not connected",
+      "notion page not found",
+    ];
+
+    const foundError = errorKeywords.find((kw) => html.includes(kw));
+    if (foundError) {
+      return {
+        url,
+        ok: false,
+        status,
+        reason: `오류 문구 감지: "${foundError}"`,
+      };
+    }
+
+    return { url, ok: true, status };
+  } catch (err) {
+    return { url, ok: false, status: 0, reason: err.message };
   }
 }
 
@@ -57,78 +159,6 @@ async function sendAlert(subject, body) {
   });
 
   console.log(`📧 알림 이메일 발송 완료 → ${CONFIG.alertEmail}`);
-}
-
-// ============================
-// sitemap.xml에서 페이지 URL 수집
-// ============================
-async function collectPages() {
-  const sitemapUrl = `${CONFIG.blogUrl}/sitemap.xml`;
-  console.log(`\n🔍 사이트맵 조회 중: ${sitemapUrl}`);
-
-  try {
-    const res = await fetchWithTimeout(sitemapUrl);
-    const text = await res.text();
-    const $ = cheerio.load(text, { xmlMode: true });
-    const urls = [];
-
-    $("url > loc").each((_, el) => {
-      urls.push($(el).text().trim());
-    });
-
-    if (urls.length === 0) {
-      console.log("⚠️  sitemap에서 URL을 찾지 못했습니다. 메인 페이지만 체크합니다.");
-      return [CONFIG.blogUrl];
-    }
-
-    console.log(`✅ 총 ${urls.length}개 페이지 발견`);
-    return urls;
-  } catch (err) {
-    console.log(`⚠️  sitemap 조회 실패: ${err.message}`);
-    console.log("메인 페이지만 체크합니다.");
-    return [CONFIG.blogUrl];
-  }
-}
-
-// ============================
-// 개별 페이지 방문 및 오류 감지
-// ============================
-async function visitPage(url) {
-  try {
-    const res = await fetchWithTimeout(url);
-    const html = (await res.text()).toLowerCase();
-
-    const errorKeywords = [
-      "not published",
-      "isn't published",
-      "not connected",
-      "page not found",
-      "this page is not available",
-      "notion page not found",
-    ];
-
-    const foundError = errorKeywords.find((kw) => html.includes(kw));
-
-    if (res.status !== 200 || foundError) {
-      return {
-        url,
-        ok: false,
-        status: res.status,
-        reason: foundError
-          ? `오류 문구 감지: "${foundError}"`
-          : `HTTP ${res.status}`,
-      };
-    }
-
-    return { url, ok: true, status: res.status };
-  } catch (err) {
-    return {
-      url,
-      ok: false,
-      status: 0,
-      reason: err.message,
-    };
-  }
 }
 
 // ============================
