@@ -13,6 +13,13 @@ const CONFIG = {
   requestTimeout: 15000,
 };
 
+// 구버전 페이지 무시목록
+const IGNORE_URLS = [
+  "https://daoukiwoom.ai/daoustory/password-test",
+  "https://daoukiwoom.ai/daoustory/%ec%8a%a4%ed%86%a0%eb%a6%ac",
+  "https://daoukiwoom.ai/daoustory/%ec%9d%b8%ec%82%ac%ec%9d%b4%ed%8a%b8",
+];
+
 // ============================
 // HTTP 요청 헬퍼 (리다이렉트 따라가지 않음)
 // ============================
@@ -67,8 +74,12 @@ async function collectPages() {
       console.log("⚠️  sitemap에서 URL을 찾지 못했습니다. 메인 페이지만 체크합니다.");
       return [CONFIG.blogUrl];
     }
+    // 무시할 URL 필터링
+    const before = urls.length;
+    urls = urls.filter((url) => !IGNORE_URLS.includes(url));
+    const ignored = before - urls.length;
 
-    console.log(`✅ 총 ${urls.length}개 페이지 발견`);
+    console.log(`✅ 총 ${urls.length}개 페이지 발견 (${ignored}개 무시)`);
 
     // ⚠️ 테스트용 - 확인 후 아래 줄 삭제하세요
     urls.push("https://daoukiwoom.ai/this-page-does-not-exist-test-404");
@@ -141,6 +152,13 @@ async function visitPage(url) {
 // 이메일 발송
 // ============================
 async function sendAlert(subject, body) {
+
+  if (!CONFIG.smtpUser || !CONFIG.smtpPass) {
+    console.log("⚠️  GMAIL_USER 또는 GMAIL_PASS가 설정되지 않아 이메일 발송을 건너뜁니다.");
+    console.log("   GitHub Secrets에 GMAIL_USER와 GMAIL_PASS를 등록해주세요.");
+    return;
+  }
+  
   const transporter = nodemailer.createTransport({
     host: "smtp.gmail.com",
     port: 587,
