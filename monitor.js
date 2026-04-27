@@ -81,8 +81,8 @@ async function collectPages() {
 
     console.log(`✅ 총 ${urls.length}개 페이지 발견 (${ignored}개 무시)`);
 
-    // 테스트
-    urls.push("https://daoukiwoom.ai/test-404-page");
+    // 테스트 url
+    // urls.push("https://daoukiwoom.ai/test-404-page");
 
     return urls;
   } catch (err) {
