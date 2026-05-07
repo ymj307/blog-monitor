@@ -9,7 +9,7 @@ const http = require("http");
 const CONFIG = {
   blogUrl: "https://daoukiwoom.ai",
   // alertEmail: "발송받을_이메일계정_입력",
-  alertEmail: "dymj307@gmail.com",
+  alertEmail: "발송받을_이메일계정_입력@gmail.com",
   smtpUser: process.env.GMAIL_USER,
   smtpPass: process.env.GMAIL_PASS,
   requestTimeout: 15000,
